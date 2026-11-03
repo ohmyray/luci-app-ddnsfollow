@@ -138,7 +138,7 @@
 
 ```
 [5G CPE 192.0.2.254] ◄── WAN ──► [子路由 192.0.2.1] ◄── LAN ──► 终端
-   Lucky :60222→.0.105:2200        NAT66 + NDP 代答 + DDNS 跟随
+   Lucky :22222→192.0.2.100:8022   NAT66 + NDP 代答 + DDNS 跟随
 ```
 
 - 前置：CPE 可做端口转发；子路由 WAN 为 DHCP 客户端
@@ -320,7 +320,7 @@ ip -6 route get <DDNS地址> | grep wan   # 走 wan
 | NAT66 | `uci set firewall.@zone[1].masq6='0' && uci commit firewall && /etc/init.d/firewall reload` |
 | LuCI 页面 | 删 menu.d / acl.d / view 三个文件 + `rm -f /tmp/luci-indexcache*` + 重启 rpcd |
 
-回滚后必须验证：`ping6 2400:3200::1` 与 `ssh -p 60222 <user>@<域名>` 的预期行为。
+回滚后必须验证：`ping6 2400:3200::1` 与 `ssh -p 22222 <user>@<域名>` 的预期行为。
 
 ---
 
