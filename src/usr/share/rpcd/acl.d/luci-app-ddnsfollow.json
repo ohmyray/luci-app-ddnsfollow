@@ -1,0 +1,18 @@
+{
+    "luci-app-ddnsfollow": {
+        "description": "Grant access to DDNS IPv6 follow",
+        "read": {
+            "file": {
+                "/usr/bin/ddns-follow-status": [ "exec" ],
+                "/tmp/ddns-follow.log": [ "read" ]
+            },
+            "uci": [ "ddnsfollow" ]
+        },
+        "write": {
+            "file": {
+                "/usr/bin/ddns-follow": [ "exec" ]
+            },
+            "uci": [ "ddnsfollow" ]
+        }
+    }
+}

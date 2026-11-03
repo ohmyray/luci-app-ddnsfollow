@@ -1,0 +1,143 @@
+#!/bin/sh
+# 跟随 DDNS 解析结果维护 NDP 代答，前缀/后缀变化后内网无需手工修
+# 配置：/etc/config/ddnsfollow    状态：/usr/bin/ddns-follow-status
+
+CFG=ddnsfollow
+STAMP=/tmp/.ddns_follow_addr
+LAST=/tmp/.ddns_follow_last
+LOG=/tmp/ddns-follow.log
+LOCK=/tmp/.ddns_follow.lock
+
+cfg() {
+    _v=$(uci -q get $CFG.settings.$1 2>/dev/null)
+    if [ -n "$_v" ]; then printf '%s' "$_v"; else printf '%s' "$2"; fi
+}
+
+ENABLED=$(cfg enabled 1)
+[ "$ENABLED" = "1" ] || exit 0
+
+DOMAIN=$(cfg domain ddns.example.com)
+INTERVAL=$(cfg interval 2)
+TIMEOUT=$(cfg timeout 3)
+LAN_IF=$(cfg lan_iface br-lan)
+WAN_IF=$(cfg wan_iface wan)
+GW_OVERRIDE=$(cfg upstream_gw "")
+STRICT=$(cfg strict_prefix 1)
+KEEP_STALE=$(cfg keep_stale 1)
+CLEAN=$(cfg clean_others 1)
+MANAGE_LAN=$(cfg manage_lan_addr 0)
+LOG_MAX=$(cfg log_max_lines 500)
+
+log() {
+    echo "$(date '+%F %T') $*" >>$LOG 2>/dev/null
+    _n=$(wc -l <$LOG 2>/dev/null || echo 0)
+    if [ "$_n" -gt "$LOG_MAX" ]; then
+        tail -n $((LOG_MAX / 2)) $LOG >$LOG.tmp 2>/dev/null && mv $LOG.tmp $LOG 2>/dev/null
+    fi
+}
+
+release() {
+    rmdir $LOCK 2>/dev/null
+    trap - EXIT
+}
+
+finish() {
+    touch $LAST 2>/dev/null
+    release
+    exit 0
+}
+
+skip() {
+    release
+    exit 0
+}
+
+mkdir $LOCK 2>/dev/null || exit 0
+trap 'rmdir $LOCK 2>/dev/null' EXIT
+
+# cron 每分钟触发，靠这里控制真实间隔，改 interval 无需动 crontab
+if [ -f "$LAST" ]; then
+    _last=$(date -r $LAST +%s 2>/dev/null)
+    _now=$(date +%s 2>/dev/null)
+    if [ -n "$_last" ] && [ -n "$_now" ]; then
+        case "$INTERVAL" in
+            ''|*[!0-9]*) INTERVAL=2 ;;
+        esac
+        [ "$INTERVAL" -lt 1 ] && INTERVAL=1
+        if [ $((_now - _last)) -lt $((INTERVAL * 60)) ]; then
+            skip
+        fi
+    fi
+fi
+
+DNS_LIST=$(uci -q get $CFG.settings.probe_dns 2>/dev/null)
+[ -n "$DNS_LIST" ] || DNS_LIST="223.5.5.5 2400:3200::1 119.29.29.29"
+
+NEW=""
+for dns in $DNS_LIST; do
+    NEW=$(dig +short +time=$TIMEOUT +tries=1 AAAA $DOMAIN @$dns 2>/dev/null \
+        | grep -E '^[23][0-9a-f][0-9a-f][0-9a-f]:' | head -1)
+    [ -n "$NEW" ] && break
+done
+
+if [ -z "$NEW" ]; then
+    log "resolve failed for $DOMAIN"
+    if [ "$KEEP_STALE" != "1" ]; then
+        for a in $(ip -6 neigh show proxy dev $LAN_IF 2>/dev/null | awk '{print $1}'); do
+            ip -6 neigh del proxy "$a" dev $LAN_IF 2>/dev/null
+            ip -6 route del "$a/128" 2>/dev/null
+            log "cleared stale $a"
+        done
+    fi
+    finish
+fi
+
+P66=$(echo "$NEW" | cut -d: -f1-4)
+[ -n "$P66" ] || finish
+
+LANP66=$(ip -6 addr show dev $LAN_IF 2>/dev/null \
+    | awk '/inet6 [23][0-9a-f][0-9a-f][0-9a-f]:/{print $2}' | cut -d: -f1-4 | head -1)
+
+if [ -n "$LANP66" ] && [ "$LANP66" != "$P66" ]; then
+    if [ "$STRICT" = "1" ]; then
+        log "prefix mismatch ddns=$P66 lan=$LANP66, skip"
+        finish
+    fi
+    log "prefix mismatch, forcing apply ddns=$P66"
+fi
+
+if [ "$MANAGE_LAN" = "1" ] && [ -z "$LANP66" ]; then
+    ip -6 addr add "${P66}::1/64" dev $LAN_IF 2>/dev/null
+    ip -6 route replace "${P66}::/64" dev $LAN_IF metric 100 2>/dev/null
+    log "br-lan seeded $P66"
+fi
+
+GW="$GW_OVERRIDE"
+[ -n "$GW" ] || GW=$(ip -6 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}' | head -1)
+
+LAN_SYS=$(echo "$LAN_IF" | tr '-' '_')
+sysctl -qw net.ipv6.conf.${LAN_SYS}.proxy_ndp=1 2>/dev/null
+
+if [ "$CLEAN" = "1" ]; then
+    for a in $(ip -6 neigh show proxy dev $LAN_IF 2>/dev/null | awk '{print $1}'); do
+        [ "$a" = "$NEW" ] && continue
+        ip -6 neigh del proxy "$a" dev $LAN_IF 2>/dev/null
+        ip -6 route del "$a/128" 2>/dev/null
+        log "drop stale $a"
+    done
+fi
+
+if ! ip -6 neigh show proxy dev $LAN_IF 2>/dev/null | grep -q "$NEW"; then
+    ip -6 neigh replace proxy "$NEW" dev $LAN_IF 2>/dev/null
+    log "proxy add $NEW"
+fi
+
+if [ -n "$GW" ]; then
+    if ! ip -6 route get "$NEW" 2>/dev/null | grep -q "dev $WAN_IF"; then
+        ip -6 route replace "$NEW/128" via "$GW" dev $WAN_IF 2>/dev/null
+        log "route add $NEW/128 via $GW dev $WAN_IF"
+    fi
+fi
+
+echo "$NEW" >$STAMP 2>/dev/null
+finish

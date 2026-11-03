@@ -1,0 +1,11 @@
+#!/bin/sh
+# 首次安装时注册定时任务，执行后自动删除
+grep -q ddns-follow /etc/crontabs/root 2>/dev/null || \
+    echo "* * * * * /usr/bin/ddns-follow >/dev/null 2>&1" >>/etc/crontabs/root
+
+/etc/init.d/cron enable 2>/dev/null
+/etc/init.d/cron restart 2>/dev/null
+/etc/init.d/rpcd restart 2>/dev/null
+rm -f /tmp/luci-indexcache* 2>/dev/null
+
+exit 0

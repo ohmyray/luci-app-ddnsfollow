@@ -1,0 +1,48 @@
+#!/bin/sh
+CFG=ddnsfollow
+
+cfg() {
+    _v=$(uci -q get $CFG.settings.$1 2>/dev/null)
+    if [ -n "$_v" ]; then printf '%s' "$_v"; else printf '%s' "$2"; fi
+}
+
+DOMAIN=$(cfg domain ddns.example.com)
+LAN_IF=$(cfg lan_iface br-lan)
+WAN_IF=$(cfg wan_iface wan)
+
+RESOLVED=$(cat /tmp/.ddns_follow_addr 2>/dev/null)
+PROXY=$(ip -6 neigh show proxy dev $LAN_IF 2>/dev/null | awk '{print $1}' | head -1)
+LAST=$(date -r /tmp/.ddns_follow_last '+%F %T' 2>/dev/null)
+LANIP=$(ip -6 addr show dev $LAN_IF 2>/dev/null \
+    | awk '/inet6 [23][0-9a-f][0-9a-f][0-9a-f]:/{print $2}' | head -1)
+LANP66=$(echo "$LANIP" | cut -d: -f1-4)
+
+ROUTE_DEV=""
+ROUTE_VIA=""
+if [ -n "$RESOLVED" ]; then
+    R=$(ip -6 route get "$RESOLVED" 2>/dev/null | head -1)
+    ROUTE_DEV=$(echo "$R" | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+    ROUTE_VIA=$(echo "$R" | awk '{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}' | head -1)
+fi
+
+GW=$(ip -6 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}' | head -1)
+CRONLINE=$(grep -c ddns-follow /etc/crontabs/root 2>/dev/null || echo 0)
+
+echo "enabled=$(cfg enabled 1)"
+echo "mode=$(cfg mode proxy)"
+echo "domain=$DOMAIN"
+echo "interval=$(cfg interval 2)"
+echo "strict_prefix=$(cfg strict_prefix 1)"
+echo "keep_stale=$(cfg keep_stale 1)"
+echo "clean_others=$(cfg clean_others 1)"
+echo "manage_lan_addr=$(cfg manage_lan_addr 0)"
+echo "resolved=$RESOLVED"
+echo "proxy=$PROXY"
+echo "route_dev=$ROUTE_DEV"
+echo "route_via=$ROUTE_VIA"
+echo "lan_prefix=$LANP66"
+echo "lan_iface=$LAN_IF"
+echo "wan_iface=$WAN_IF"
+echo "upstream_gw=$GW"
+echo "cron_entries=$CRONLINE"
+echo "last_run=$LAST"

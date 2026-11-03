@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+ddns-follow text eol=lf
+ddns-follow-status text eol=lf
+95-lan6-prefix text eol=lf
+99-ddnsfollow text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+Makefile text eol=lf

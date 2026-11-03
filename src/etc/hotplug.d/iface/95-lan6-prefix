@@ -1,0 +1,35 @@
+#!/bin/sh
+# 上游只给 IA_NA 不给 PD，LAN 复用 WAN 那条 /64
+[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || exit 0
+[ "$INTERFACE" = "wan6" ] || exit 0
+
+STAMP=/tmp/.lan6_prefix
+
+NEW=""
+for i in 1 2 3 4 5; do
+	NEW=$(ubus call network.interface.wan6 status 2>/dev/null | jsonfilter -e '@["ipv6-address"][0].address' 2>/dev/null)
+	[ -n "$NEW" ] && break
+	sleep 1
+done
+[ -n "$NEW" ] || exit 0
+
+P66=$(echo "$NEW" | cut -d: -f1-4)
+[ -n "$P66" ] || exit 0
+
+OLD=$(cat $STAMP 2>/dev/null)
+if [ -n "$OLD" ] && [ "$OLD" != "$P66" ]; then
+	ip -6 addr del "${OLD}::1/64" dev br-lan 2>/dev/null
+	ip -6 route del "${OLD}::/64" dev br-lan 2>/dev/null
+fi
+
+ip -6 addr add "${P66}::1/64" dev br-lan 2>/dev/null
+ip -6 route replace "${P66}::/64" dev br-lan metric 100 2>/dev/null
+echo "$P66" > $STAMP
+
+if [ "$OLD" != "$P66" ]; then
+	killall -HUP odhcpd 2>/dev/null
+fi
+
+# 代答和 /128 交给 ddns-follow，跟着域名实际解析结果走
+[ -x /usr/bin/ddns-follow ] && /usr/bin/ddns-follow
+exit 0

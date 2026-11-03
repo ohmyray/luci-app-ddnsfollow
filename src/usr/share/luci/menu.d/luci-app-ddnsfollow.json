@@ -1,0 +1,13 @@
+{
+    "admin/services/ddnsfollow": {
+        "title": "DDNS IPv6 跟随",
+        "order": 60,
+        "action": {
+            "type": "view",
+            "path": "ddnsfollow/overview"
+        },
+        "depends": {
+            "acl": [ "luci-app-ddnsfollow" ]
+        }
+    }
+}

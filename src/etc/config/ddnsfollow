@@ -1,0 +1,18 @@
+
+config settings 'settings'
+	option enabled '1'
+	option mode 'proxy'
+	option domain 'ddns.example.com'
+	list probe_dns '223.5.5.5'
+	list probe_dns '2400:3200::1'
+	list probe_dns '119.29.29.29'
+	option interval '2'
+	option timeout '3'
+	option lan_iface 'br-lan'
+	option wan_iface 'wan'
+	option strict_prefix '1'
+	option keep_stale '1'
+	option clean_others '1'
+	option manage_lan_addr '0'
+	option log_max_lines '500'
+
