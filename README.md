@@ -118,7 +118,7 @@ PC 解析 ddns.<域名> → 前缀::aaaa:...（CPE 的 WAN 地址，与 PC 同 /
   ↓ 按 /128 明细路由
 子路由 → WAN → CPE
   ↓ Lucky 转发
-CPE :60222 → 192.0.2.100:2200 → 子路由 DNAT → Mac :22
+CPE :60222 → 192.0.2.100:2200 → 子路由 DNAT → 内网服务器 :22
 ```
 
 第 3 条绕了一圈（PC → 子路由 → CPE → 子路由 → Mac），但这是「上游无 PD、
@@ -136,16 +136,51 @@ CPE :60222 → 192.0.2.100:2200 → 子路由 DNAT → Mac :22
 
 ## 安装
 
-```sh
-# 方式一：直接拷贝
-scp -r . root@192.0.2.1:/tmp/luci-app-ddnsfollow
-ssh root@192.0.2.1 "sh /tmp/luci-app-ddnsfollow/install.sh"
+先确认目标系统用哪种包管理器：
 
-# 方式二：打成 ipk（需 OpenWrt SDK）
-# 把本目录放进 package/ 下，make package/luci-app-ddnsfollow/compile
+```sh
+command -v apk  >/dev/null && echo "apk 系统（OpenWrt 24.10+ / ImmortalWRT SNAPSHOT）"
+command -v opkg >/dev/null && echo "opkg 系统（OpenWrt 23.05 及更早）"
+```
+
+| 系统 | 可用方式 |
+| --- | --- |
+| `apk` | 只能用 tar.gz + `install.sh`，**ipk 装不上** |
+| `opkg` | ipk 或 tar.gz + `install.sh` |
+
+### 从 Release 安装（推荐，两种系统都适用）
+
+```sh
+# 下载 luci-app-ddnsfollow-<版本>.tar.gz
+tar -xzf luci-app-ddnsfollow-*.tar.gz -C /tmp
+sh /tmp/luci-app-ddnsfollow-*/install.sh
+```
+
+### ipk（仅 opkg 系统）
+
+```sh
+opkg install luci-app-ddnsfollow_<版本>_all.ipk
+```
+
+### 从源码
+
+```sh
+git clone https://github.com/ohmyray/luci-app-ddnsfollow.git
+scp -r luci-app-ddnsfollow root@<路由器>:/tmp/
+ssh root@<路由器> "sh /tmp/luci-app-ddnsfollow/install.sh"
 ```
 
 安装后进入 LuCI：**服务 → DDNS IPv6 跟随**。
+
+## 发版
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+CI 会依次做：脚本语法检查（bash + dash）、JSON 与 JS 校验、构造 ipk 与源码
+tar.gz，然后发布到 Release。
 
 ## 配置项
 
